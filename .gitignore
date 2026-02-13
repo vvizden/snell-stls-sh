@@ -1,0 +1,29 @@
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Logs / temp
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Env / secrets (do not commit)
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
+# If you ever copy server output files back locally, keep them out of git
+snell-stls-info.txt
+snell-surge-proxy.conf
