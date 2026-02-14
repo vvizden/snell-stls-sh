@@ -2,13 +2,13 @@
 
 Language: [Chinese](README.md) | [English](README.en.md)
 
-## Disclaimer (read first)
+## Disclaimer
 
 - This project is for learning and communication only. Do not use it for illegal purposes.
 - This project does not guarantee availability/security/maintainability and you must evaluate and be responsible for it yourself.
 - The script downloads and installs third-party software (Snell / ShadowTLS). Verify sources and licenses yourself and make sure you comply with local laws and provider terms.
 
-## Quick Start (this is enough for beginners)
+## Quick Start
 
 You need:
 
