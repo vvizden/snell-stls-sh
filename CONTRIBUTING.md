@@ -1,31 +1,19 @@
-# Contributing
+# 贡献说明
 
-Thanks for contributing.
+[English](CONTRIBUTING.en.md)
 
-## Scope
+项目使用 Bash 和 systemd，为 Debian / Ubuntu 上的 Snell 5.x / 6.x 提供版本管理，支持 amd64 和 aarch64。
 
-- Maintain a standalone Bash manager (`snell.sh`, installed as `snellctl`) for native Snell 5.x/6.x on Debian/Ubuntu + systemd, amd64/aarch64.
-- One instance, maturity-ceiling channels, full-snapshot rollback. No ShadowTLS, legacy migration, background updates or firewall/kernel tuning.
-- Avoid adding unrelated features that significantly expand the support matrix.
+## 修改要求
 
-## Development Notes
+- 保持 `snell.sh` 独立可运行，并支持安全地加载函数用于测试。
+- 保留完整版本号及 Beta / RC 后缀，分别记录安装版本和客户端协议版本。
+- 通过所有权标记确定管理范围；升级与回滚应同步处理二进制、服务端配置、客户端配置和通道。
+- 将密钥输出集中在 `export` 命令中。
+- 功能和使用方式变化时，同步更新中英文文档。
 
-- Please keep changes POSIX-ish where possible, but Bash is allowed/expected for this script.
-- Keep output user-friendly and avoid printing secrets unless necessary.
-- If you add new external endpoints (download sources, IP detection services, etc.), update `README.md` accordingly.
-- Preserve full release suffixes; binary version and client protocol version are distinct.
-- Only mutate marked installations. Binary, server config, client export and channel must switch and roll back together. Never print PSKs outside explicit `export`.
-- Keep the entrypoint standalone and safe to source without invoking `main`.
+## 验证与提交
 
-## Verification
+按[测试说明](tests/README.md)运行语法检查、ShellCheck 和测试。部署逻辑变化时，补充真实 systemd 与 Surge 验证，并将环境、版本和结果记入[验证记录](VERIFICATION.md)。
 
-- Run `bash -n snell.sh` and `bash tests/run.sh`.
-- Full Linux/root tests: `docker build -f tests/Dockerfile -t snellctl-test .` then `docker run --rm snellctl-test`.
-- Deployment changes also require real-systemd acceptance from `tests/README.md`. Record OS, architecture, binary versions and test layers in `VERIFICATION.md`; mocks do not prove real deployment or client connectivity.
-- Parser tests use fixtures; live official discovery is a separate smoke check.
-- The reviewed script is the installed artifact. Check installed `snellctl --help` and commands as well as sourced functions. No generated distribution is needed.
-
-## Pull Requests
-
-- Describe what problem is being solved and how it was tested.
-- Include before/after snippets for user-facing output changes.
+提交说明请写清解决的问题、使用方式的变化及验证结果。

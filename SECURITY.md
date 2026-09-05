@@ -1,18 +1,9 @@
-# Security Policy
+# 安全反馈
 
-## Reporting a Vulnerability
+[English](SECURITY.en.md)
 
-If you believe you found a security issue in this project, please open a GitHub issue with minimal sensitive details, and include:
+反馈问题时，请提供系统版本、架构、复现步骤，以及预期和实际结果。提交日志或截图前，请隐去密钥、密码、公网地址等敏感信息。
 
-- What you were trying to do
-- Reproduction steps (redact IPs/keys/passwords/tokens)
-- Expected vs actual behavior
-- OS version / distro (Debian/Ubuntu) and architecture
+配置和连接密钥保存在 `/opt/snellctl/generations/`。`snellctl export` 会输出连接密钥，请妥善保管导出内容。默认卸载保留这些数据，彻底清理请使用 `uninstall --purge`。
 
-Notes:
-
-- This project is provided "as is" without warranty.
-- Snell PSKs reside under `/opt/snellctl/generations/` in root/service-readable server configs and root-only Surge exports. Default uninstall retains credentials; `uninstall --purge` removes managed snapshots.
-- `snellctl export` intentionally prints the PSK. Ordinary command output must omit secrets. Review journal output before sharing it.
-- The tool manages marked installations and downloads official HTTPS artifacts. Local hashes detect later modification; they are not upstream signatures.
-- Snell does not provide forward secrecy. Beta/RC client compatibility and public reachability are separate from local startup checks.
+本项目用于个人学习，免责声明见 [README](README.md#免责声明)。
