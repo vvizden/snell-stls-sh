@@ -1,211 +1,111 @@
-# snell-stls-sh：Snell v5 + ShadowTLS v3 一键部署脚本（Debian/Ubuntu + systemd）
+# snellctl：原生 Snell 单实例版本管理器
 
-Language: [中文](README.md) | [English](README.en.md)
+[English](README.en.md)
 
-## 免责声明
+Bash + systemd，支持 Snell 5.x / 6.x 的正式版、RC、Beta 和指定版本。全新安装，一个服务，完整快照回滚。没有 ShadowTLS、SNI、后台更新、内核调优或自动防火墙修改。
 
-- 本项目仅用于个人学习和交流，请勿用于非法目的，请勿在生产环境中使用。
-- 本项目不对可用性、安全性、长期可维护性做任何保证，你需要自行评估并承担风险。
-- 脚本会从互联网下载并安装第三方软件（Snell / ShadowTLS）；请自行确认来源与使用许可，并确保遵守当地法律法规与服务商条款。
+> 本项目会从官方站点下载并运行第三方 Snell 二进制。测试版可能改变协议；服务端启动正常不等于 Surge 客户端兼容。项目按现状提供，不承诺可用性或抗干扰效果。
 
-## 新手一键部署（这节看完就够了）
+## 安装
 
-你需要准备：
+要求：Debian/Ubuntu、运行中的 systemd、root/sudo、amd64 或 aarch64。按需通过 apt 安装 curl、CA 证书、unzip、jq、file、OpenSSL、util-linux、iproute2 等依赖。
 
-- 一台 Debian/Ubuntu 的 VPS（必须有 `systemd`）
-- 能登录 VPS 的账号（常见是 `root`）
-- 你的本机有 `ssh`
-- VPS 需要能访问 GitHub（出网正常），并安装了 `curl`
-
-占位符说明：
-
-- `<VPS_IP>`: 你的 VPS 公网 IP
-- `<SSH_PORT>`: SSH 端口（默认 `22`，如果你没改过就可以不写 `-p/-P`）
-- `<PRIVATE_KEY_PATH>`: 私钥路径（SSH Key 登录时，如果你的私钥不是默认位置才需要）
-
-### 方式 A：SSH Key 登录（推荐）
-
-说明：如果你的私钥就在默认位置（例如 `~/.ssh/id_ed25519`），通常不需要写 `-i`。
-
-1) 登录 VPS（SSH 端口默认 22 时最简单，可省略 `-p`）：
+在 VPS 下载脚本，检查后执行：
 
 ```bash
-ssh root@<VPS_IP>
+curl -fsSL -o snell.sh https://raw.githubusercontent.com/vvizden/snellctl/main/snell.sh
+sudo bash snell.sh install
 ```
 
-如果你的私钥不在默认位置，加 `-i <PRIVATE_KEY_PATH>`：
+交互式安装询问公网 IPv4/域名、端口和通道。默认端口 443、通道 stable。可将下载 URL 中的 main 替换为已审阅的提交号，固定管理工具版本。
+
+无人值守安装（将地址替换成自己的 VPS 公网 IPv4 或域名）：
 
 ```bash
-ssh -i <PRIVATE_KEY_PATH> root@<VPS_IP>
+sudo bash snell.sh install --server vpn.example.com --channel stable --non-interactive --yes
+sudo snellctl status
+sudo snellctl export
 ```
 
-如果你改过 SSH 端口（非 22），加 `-p <SSH_PORT>`：
+export 输出包含 PSK 的 Surge [Proxy] 配置行，不要放进公开日志、截图或 issue。普通安装/升级输出不打印密钥。自行在主机防火墙和云安全组放行所选 **TCP** 端口；脚本不修改 SSH 规则。
+
+脚本不迁移旧项目、不接管其他工具的服务或账号、不停止占用端口的进程。检测到旧安装时，请先手工处理。保留下载的 snell.sh，以便卸载管理命令后清理剩余数据。
+
+## 版本与命令
+
+通道是**允许的成熟度上限**：
+
+| 通道 | 允许版本 |
+| --- | --- |
+| stable | 正式版 |
+| rc | 正式版 + RC |
+| beta | 正式版 + RC + Beta |
+
+先比较基础版本，再比较阶段和编号：`6.0.0b4 < 6.0.0rc < 6.0.0rc2 < 6.0.0 < 6.1.0b1`。无编号 rc 按 rc1 排序，但保留官方下载文件的拼写。Beta 通道会自然跟进 RC 和正式版。
 
 ```bash
-ssh -p <SSH_PORT> root@<VPS_IP>
+snellctl versions
+sudo snellctl upgrade --yes
+sudo snellctl upgrade --channel rc --yes
+sudo snellctl upgrade --channel beta --yes
+sudo snellctl upgrade --version 6.0.0b4 --allow-downgrade --yes
+sudo snellctl rollback --yes
+sudo snellctl status
+sudo snellctl export
 ```
 
-2) 在 VPS 上从 GitHub 下载脚本（默认下载 `main` 分支最新版本）：
+--channel 和 --version 互斥。精确版本首次安装会保存对应通道；升级时指定精确版本不改变原通道。--allow-downgrade 仅允许与 upgrade --version 一起使用；切换通道也不隐式降级。rollback 无需联网，恢复上一套快照及其通道；再次 rollback 可切回。
+
+实时读取官方 Markdown 发布页，提取失败时尝试同一页面的 HTML。versions 展示页面可发现版本和可读取的本地快照，不是完整历史目录。指定历史版本验证对应官方文件，不猜测相邻版本、不使用第三方镜像。页面滞后时无法发现尚未列出的新版本，可用 --version 指定已公布且仍可下载的文件。
+
+先确定最新候选，再检查架构；缺包时停止，不静默选择旧版。未知版本格式停止发现，未知主版本要求更新管理工具；5.x/6.x 内的新版本无需逐一加入白名单。upgrade 只更新 Snell 服务端，不自行更新管理脚本。
+
+## 运行默认值与边界
+
+- IPv4 监听 0.0.0.0:443、IPv4 出站、系统 DNS。首次安装可用 --port 改端口。
+- PSK 默认生成 32 字节随机数，保存为 64 位十六进制，升级保留。首次安装可用 --psk 指定 16–255 位 ASCII 字母、数字、下划线或连字符。
+- 5.x 输出 version=5，6.x 输出 version=6；均为 reuse=true、block-quic=on，不默认启用 TFO。
+- v6 使用内建默认加密/流量整形，不提供 unsafe-raw，也不向早期 Beta 写入新参数。
+- 普通 UDP 经 Snell TCP 连接转发；客户端阻止 QUIC，无需开放公网 UDP 端口。TCP 传输仍会影响实时 UDP 性能。
+- 唯一常驻服务 snell-server.service 使用专用 snell 账号，仅授予 CAP_NET_BIND_SERVICE；没有 root 身份或防火墙管理权限。
+- /usr/local/sbin/snellctl 是安装后的入口。/opt/snellctl/generations/ 保存完整部署，current 原子链接指向当前快照。
+- 快照包含二进制、服务端配置、Surge 片段及元数据。密钥配置仅 root/服务账号可读，客户端片段及元数据仅 root 可读。快照由工具管理，手动修改会被完整性检查拒绝。
+- 下载限于官方 dl.nssurge.com/snell/。若同 URL 加 .sha256 的官方校验文件存在则核验；404/410 时记录 local-only。本地 SHA-256 用于检测后续变化，不是来源认证；来源认证依赖 HTTPS。
+
+## 升级、恢复和卸载
+
+下载、ZIP 检查、架构与可执行性检查完成后，才停止旧服务。事务记录旧状态，原子切换完整快照；随后在约十五秒窗口内检查目标进程连续五次（约四秒）保持运行且拥有正确监听端口。失败恢复旧二进制、配置、客户端片段和通道，并返回失败。只保留当前和上一套快照。
+
+正常退出/信号尝试恢复未完成事务。强制终止或断电后，下一次有权限的管理操作先恢复或报告阻碍；回滚也失败时保留事务。systemd 开机使用当前完整快照，未完成更新不视为已经验收。单实例更新会短暂断开现有连接，不承诺无缝切换。
+
+**启动检查不能验证公网防火墙、目标可达性或 Surge 协议兼容。** 更新后请在匹配的 Surge 上验证 HTTPS、连接复用和普通 UDP。需要时离线 rollback 并重新复制旧配置。普通 status 不打印密钥；分享 journal 日志前仍应自行检查。
 
 ```bash
-apt-get update
-apt-get install -y curl ca-certificates
-curl -fsSL -o /root/deploy_snell_stls.sh https://raw.githubusercontent.com/vvizden/snell-stls-sh/main/deploy_snell_stls.sh
-chmod +x /root/deploy_snell_stls.sh
+sudo journalctl -u snell-server.service -n 50
+sudo snellctl uninstall --yes
+# 管理命令已删除，使用保存的脚本清理数据：
+sudo bash snell.sh uninstall --purge --yes
 ```
 
-提示：如果你希望“锁定版本”，可以把上面 URL 里的 `main` 替换为某个 commit hash。
+默认卸载删除服务与命令，保留快照、密钥和账号。--purge 删除保留内容。保留数据时不能重新全新安装，需先显式 purge。陌生文件、账号变更、外部 systemd override 或所有权异常会要求手工检查。
 
-3) 在 VPS 上执行无人值守一键部署：
+## 验证
+
+必须区分：官方页面发现的版本、工具支持的 5.x/6.x 范围、实际测试过的 OS/架构/版本。
 
 ```bash
-bash /root/deploy_snell_stls.sh install --non-interactive --yes
+bash -n snell.sh
+bash tests/run.sh
+docker build -f tests/Dockerfile -t snellctl-test .
+docker run --rm snellctl-test
 ```
 
-如果你不是 `root` 登录，请用 `sudo`：
+[测试说明](tests/README.md)记录真实 systemd 隔离验收方法。[VERIFICATION.md](VERIFICATION.md)记录本次实际验证覆盖。语法检查与 mock 测试不能替代真实 systemd 或 Surge 端连接验证。
 
-```bash
-sudo bash /root/deploy_snell_stls.sh install --non-interactive --yes
-```
+## 官方资料
 
-### 方式 B：密码登录
+- [Snell 发布与安全说明](https://kb.nssurge.com/surge-knowledge-base/release-notes/snell)
+- [Surge Snell 参数](https://manual.nssurge.com/policies/snell.html)
+- [Snell v6 设计说明](https://nssurge.com/blog/snell-v6/)
 
-说明：如果你的 VPS 禁用了密码登录（`PasswordAuthentication no`），这种方式不适用。
-
-1) 登录 VPS（会提示输入密码）：
-
-```bash
-ssh root@<VPS_IP>
-```
-
-如果你改过 SSH 端口（非 22），加 `-p <SSH_PORT>`：
-
-```bash
-ssh -p <SSH_PORT> root@<VPS_IP>
-```
-
-如果你本机配置了很多密钥，导致一直优先尝试 Key 认证、迟迟不弹密码提示，可强制走密码认证：
-
-```bash
-ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no root@<VPS_IP>
-```
-
-如果你改过 SSH 端口（非 22），同时需要强制走密码认证：
-
-```bash
-ssh -p <SSH_PORT> -o PreferredAuthentications=password -o PubkeyAuthentication=no root@<VPS_IP>
-```
-
-2) 在 VPS 上从 GitHub 下载脚本：
-
-```bash
-apt-get update
-apt-get install -y curl ca-certificates
-curl -fsSL -o /root/deploy_snell_stls.sh https://raw.githubusercontent.com/vvizden/snell-stls-sh/main/deploy_snell_stls.sh
-chmod +x /root/deploy_snell_stls.sh
-```
-
-3) 在 VPS 上执行无人值守一键部署：
-
-```bash
-bash /root/deploy_snell_stls.sh install --non-interactive --yes
-```
-
-### 部署完成后怎么拿 Surge 配置
-
-部署成功后：
-
-- 终端会直接输出一条可用于 Surge 的 `[Proxy]` 配置行（包含 Proxy Name，例如 `Snell-v5 = snell, ...`）
-- 同时会生成可复制粘贴的片段文件：
-  - `/root/snell-surge-proxy.conf`
-  - `/root/snell-stls-info.txt`
-
-你只需要复制终端里那条 `Snell-v5 = snell, ...`，或者执行下面命令查看文件并复制：
-
-```bash
-cat /root/snell-surge-proxy.conf
-```
-
-到这里，新手流程结束。后面内容只在你想自定义/排错时再看。
-
-## 这个脚本做了什么（简版）
-
-- 安装 `snell-server` 与 `shadow-tls` 二进制，并注册 `systemd` 服务
-- `snell-server` 只监听本机回环：`127.0.0.1:<snell-port>`（默认 `18080`）
-- `shadow-tls` 监听公网入口：`0.0.0.0:<public-port>`（默认 `443/tcp`）
-- 会生成/修改的关键文件：
-  - `/etc/snell/snell-server.conf`
-  - `/etc/systemd/system/snell-server.service`
-  - `/etc/systemd/system/shadow-tls.service`
-  - `/usr/local/bin/snell-server`
-  - `/usr/local/bin/shadow-tls`
-  - `/root/snell-surge-proxy.conf`
-  - `/root/snell-stls-info.txt`
-
-注意：`/root/snell-surge-proxy.conf` 与 `/root/snell-stls-info.txt` 包含密钥信息，按“密码”对待，不要随意截图/转发。
-
-## 常用命令（按需）
-
-```bash
-# 交互式安装（会提问并二次确认）
-bash /root/deploy_snell_stls.sh install
-
-# 升级（尽量保留现有端口/密钥/SNI）
-bash /root/deploy_snell_stls.sh upgrade --yes
-
-# 查看状态（服务状态、监听端口、最近日志）
-bash /root/deploy_snell_stls.sh status
-
-# 卸载（保留连接信息文件）
-bash /root/deploy_snell_stls.sh uninstall --yes
-
-# 卸载并清理连接信息文件
-bash /root/deploy_snell_stls.sh uninstall --purge --yes
-```
-
-## 参数速览（按需）
-
-| 参数 | 作用 | 默认值 | 你什么时候需要改 |
-| --- | --- | --- | --- |
-| `--public-port <port>` | 公网入口端口（客户端连这个） | `443` | 443 被占用，或你想换端口 |
-| `--snell-port <port>` | Snell 本地端口（仅回环） | `18080` | 和你现有服务冲突时 |
-| `--snell-psk <value>` | Snell PSK | 自动随机生成 | 多台机器要统一配置，或你要手动固定 |
-| `--stls-password <value>` | ShadowTLS 密码 | 自动随机生成 | 同上 |
-| `--stls-sni <domain>` | ShadowTLS 伪装域名（SNI） | 自动选择 | 自动选择失败，或你要指定 |
-| `--ssh-port <port>` | 防火墙保活用的 SSH 端口 | 自动探测（失败则 `22`） | 你 SSH 不是常见端口且探测不准 |
-| `--no-firewall` | 不自动改防火墙，只打印建议命令 | 关闭 | 你有自己的防火墙策略 |
-| `--non-interactive` | 非交互（不提问） | 关闭 | 自动化/批量部署 |
-| `--yes` | 跳过确认提示 | 关闭 | 自动化执行时 |
-
-完整参数以脚本帮助为准：
-
-```bash
-bash /root/deploy_snell_stls.sh --help
-```
-
-## 排错（只保留和脚本直接相关的）
-
-### 1) Snell 下载失败，提示“疑似被反爬/验证码页面替换”
-
-脚本需要解析 Surge 的 Snell release notes 页面来定位 Linux 下载链接；如果你的 VPS 出口被拦或页面结构变化，会失败，并保存原始页面到：
-
-```bash
-sed -n '1,80p' /tmp/snell_release_notes_last.html
-```
-
-### 2) 服务启动失败 / 不是 active
-
-优先用脚本自带命令看完整信息：
-
-```bash
-bash /root/deploy_snell_stls.sh status
-```
-
-### 3) 你手动指定的 `--stls-sni` 被脚本拒绝
-
-脚本会用 `openssl s_client -tls1_3` 做 TLS1.3 探测；你提供的域名如果当前网络下无法完成 TLS1.3 握手，会直接报错退出。换一个支持 TLS1.3 的常见域名即可，或不传让脚本自动选。
-
-## 参考资料（可选）
-
-- Surge KB（Snell release notes）：<https://kb.nssurge.com/surge-knowledge-base/release-notes/snell>
-- ShadowTLS 项目：<https://github.com/ihciah/shadow-tls>
+Snell 不提供前向保密，本工具不会改变协议安全属性。请根据自己的网络与安全需求选择。

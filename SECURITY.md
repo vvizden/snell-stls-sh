@@ -12,4 +12,7 @@ If you believe you found a security issue in this project, please open a GitHub 
 Notes:
 
 - This project is provided "as is" without warranty.
-- The deployment script generates credentials (Snell PSK / ShadowTLS password) and writes them to `/root/snell-stls-info.txt` and `/root/snell-surge-proxy.conf` on the server. Treat these files as secrets and avoid sharing screenshots/logs containing them.
+- Snell PSKs reside under `/opt/snellctl/generations/` in root/service-readable server configs and root-only Surge exports. Default uninstall retains credentials; `uninstall --purge` removes managed snapshots.
+- `snellctl export` intentionally prints the PSK. Ordinary command output must omit secrets. Review journal output before sharing it.
+- The tool manages marked installations and downloads official HTTPS artifacts. Local hashes detect later modification; they are not upstream signatures.
+- Snell does not provide forward secrecy. Beta/RC client compatibility and public reachability are separate from local startup checks.

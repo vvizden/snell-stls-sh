@@ -1,199 +1,100 @@
-# snell-stls-sh: Snell v5 + ShadowTLS v3 Deploy Script (Debian/Ubuntu + systemd)
+# snellctl: native Snell, one instance
 
-Language: [Chinese](README.md) | [English](README.en.md)
+[中文](README.md)
 
-## Disclaimer
+A standalone Bash + systemd manager for Snell 5.x/6.x final, RC, beta and exact releases. Fresh installations, one service, complete snapshots and offline rollback. No ShadowTLS, SNI, migration, background updater, kernel tuning or firewall changes.
 
-- This project is for learning and communication only. Do not use it for illegal purposes.
-- This project does not guarantee availability/security/maintainability and you must evaluate and be responsible for it yourself.
-- The script downloads and installs third-party software (Snell / ShadowTLS). Verify sources and licenses yourself and make sure you comply with local laws and provider terms.
+## Install
 
-## Quick Start
+Requires Debian/Ubuntu with running systemd, root/sudo, amd64/aarch64. Missing packages (curl, CA certificates, unzip, jq, file, OpenSSL, util-linux, iproute2 and coreutils) are installed via apt.
 
-You need:
-
-- A Debian/Ubuntu VPS (must have `systemd`)
-- An account that can log in (commonly `root`)
-- `ssh` on your local machine
-- The VPS must be able to reach GitHub (outbound network works) and have `curl` installed
-
-Placeholder notes:
-
-- `<VPS_IP>`: your VPS public IP
-- `<SSH_PORT>`: SSH port (default `22`)
-- `<PRIVATE_KEY_PATH>`: path to your private key (only needed if it is not in the default location)
-
-### Option A: SSH key login (recommended)
-
-1) SSH into the VPS:
+Download and inspect on your VPS:
 
 ```bash
-ssh root@<VPS_IP>
+curl -fsSL -o snell.sh https://raw.githubusercontent.com/vvizden/snellctl/main/snell.sh
+sudo bash snell.sh install
+# Automation: replace the example with your public IPv4 address or DNS name.
+sudo bash snell.sh install --server vpn.example.com --channel stable --non-interactive --yes
+sudo snellctl status
+sudo snellctl export
 ```
 
-If your private key is not in the default location, add `-i <PRIVATE_KEY_PATH>`:
+Interactive setup asks for the public address, port (443) and channel (stable). Pin the download URL to a reviewed commit instead of main for reproducibility. Existing foreign files/services/accounts and occupied ports are rejected, not adopted or stopped. Remove legacy installations manually. Keep the downloaded script to purge retained data after uninstalling the command.
+
+export prints a Surge [Proxy] declaration containing the PSK. Do not share it in logs, screenshots or issues. Open the selected **TCP** port in the host firewall/provider security group yourself; SSH rules are never changed.
+
+## Releases
+
+| Channel | Allowed maturity |
+| --- | --- |
+| stable | Final |
+| rc | Final + RC |
+| beta | Final + RC + beta |
+
+Compare base versions first, then maturity and numeric sequence: `6.0.0b4 < 6.0.0rc < 6.0.0rc2 < 6.0.0 < 6.1.0b1`. Unnumbered rc sorts as rc1 while preserving the original filename. A beta ceiling naturally follows RC and final releases.
 
 ```bash
-ssh -i <PRIVATE_KEY_PATH> root@<VPS_IP>
+snellctl versions
+sudo snellctl upgrade --yes
+sudo snellctl upgrade --channel rc --yes
+sudo snellctl upgrade --channel beta --yes
+sudo snellctl upgrade --version 6.0.0b4 --allow-downgrade --yes
+sudo snellctl rollback --yes
+sudo snellctl status
+sudo snellctl export
 ```
 
-If your SSH port is not 22, add `-p <SSH_PORT>`:
+--channel and --version are mutually exclusive. Exact fresh installs save the release's maturity as their channel; exact upgrades preserve the saved channel. Downgrades require upgrade --version plus --allow-downgrade; changing channels never silently downgrades. Offline rollback restores the previous complete snapshot including its channel. Another rollback switches back.
+
+The official Markdown release page is queried live, with same-page HTML fallback. versions lists discoverable releases and readable local snapshots, not a complete historical archive. Exact versions validate the corresponding official file, without guessed fallback versions or third-party mirrors. When release notes lag, an explicitly supplied --version can select a known available file.
+
+Selection determines the latest candidate before checking architecture availability; absent builds stop the operation instead of selecting older versions. Unknown formats stop discovery; unknown protocol majors require a manager update. New releases within 5.x/6.x need no individual allowlist. upgrade updates the server, not the management script.
+
+## Runtime and recovery
+
+- IPv4 listener 0.0.0.0:443, IPv4 egress, system DNS. Install-only --port changes the port.
+- PSK defaults to 32 random bytes rendered as 64 hexadecimal characters. Install-only --psk accepts 16–255 ASCII letters/digits/underscore/hyphen. Upgrades retain it; ordinary output omits secrets.
+- Surge uses version=5 for 5.x and version=6 for 6.x, reuse=true and block-quic=on; TFO is not enabled. v6 retains built-in default encryption/shaping, without unsafe-raw or new configuration fields injected into early betas.
+- Ordinary UDP travels through Snell's TCP transport; QUIC is blocked in the export. No public UDP port is required. TCP still affects real-time UDP performance.
+- snell-server.service runs as the dedicated snell account with only CAP_NET_BIND_SERVICE, not root.
+- /usr/local/sbin/snellctl is the installed command; /opt/snellctl/generations/ contains complete snapshots, selected by an atomic current symlink.
+- Snapshots contain the binary, server configuration, Surge snippet and metadata. Server secrets are root/service-readable, export/metadata root-only. Manual snapshot changes fail integrity checks.
+- Downloads stay under the official dl.nssurge.com/snell/ directory. An official sibling .sha256 file is verified when available; 404/410 records local-only. Local hashes detect later changes, not source authenticity. Source authentication relies on HTTPS.
+
+Downloads, ZIP checks, architecture and executable checks precede stopping the old service. A transaction records the old state. After switching, the same target PID must be active and own the expected listener for five consecutive samples (about four seconds), within approximately fifteen seconds. Failure restores the complete previous snapshot and returns an error. Only current and previous snapshots are retained.
+
+Ordinary exits/signals attempt recovery. After forced termination or power loss, the next privileged management operation recovers or reports the blocker; unsuccessful recovery retains the transaction. systemd boots the currently selected complete snapshot, without treating an unfinished update as accepted. Single-instance upgrades briefly disconnect existing requests.
+
+**Local startup checks do not verify public reachability, destination access or Surge compatibility.** Beta changes may require a matching client update. Test HTTPS, connection reuse and ordinary UDP from Surge; use offline rollback and the previous export if necessary. Review journal logs before sharing them.
+
+## Uninstall
 
 ```bash
-ssh -p <SSH_PORT> root@<VPS_IP>
+sudo journalctl -u snell-server.service -n 50
+sudo snellctl uninstall --yes
+# The installed command is now removed:
+sudo bash snell.sh uninstall --purge --yes
 ```
 
-2) Download the script from GitHub on the VPS (downloads the latest `main` by default):
+Default uninstall removes the service/command and retains snapshots, credentials and account. --purge removes retained data too. Purge before a fresh reinstall. Unexpected files, ownership/account changes or external systemd overrides require manual inspection.
+
+## Verification
+
+Official discovery, supported protocol range and actually tested platforms/versions are separate facts.
 
 ```bash
-apt-get update
-apt-get install -y curl ca-certificates
-curl -fsSL -o /root/deploy_snell_stls.sh https://raw.githubusercontent.com/vvizden/snell-stls-sh/main/deploy_snell_stls.sh
-chmod +x /root/deploy_snell_stls.sh
+bash -n snell.sh
+bash tests/run.sh
+docker build -f tests/Dockerfile -t snellctl-test .
+docker run --rm snellctl-test
 ```
 
-Tip: if you want to pin a specific version, replace `main` in the URL with a commit hash.
+See [tests/README.md](tests/README.md) for isolated real-systemd acceptance and [VERIFICATION.md](VERIFICATION.md) for actual coverage. Mocks and syntax checks do not prove real deployment or Surge connectivity.
 
-3) Run unattended install:
+## Sources
 
-```bash
-bash /root/deploy_snell_stls.sh install --non-interactive --yes
-```
+- [Official releases and security trade-offs](https://kb.nssurge.com/surge-knowledge-base/release-notes/snell)
+- [Surge Snell parameters](https://manual.nssurge.com/policies/snell.html)
+- [Introducing Snell v6](https://nssurge.com/blog/snell-v6/)
 
-If you are not logged in as `root`, use `sudo`:
-
-```bash
-sudo bash /root/deploy_snell_stls.sh install --non-interactive --yes
-```
-
-### Option B: Password login
-
-1) SSH into the VPS:
-
-```bash
-ssh root@<VPS_IP>
-```
-
-If your SSH port is not 22, add `-p <SSH_PORT>`:
-
-```bash
-ssh -p <SSH_PORT> root@<VPS_IP>
-```
-
-If your machine tries too many SSH keys before prompting for password, force password auth:
-
-```bash
-ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no root@<VPS_IP>
-```
-
-If your SSH port is not 22 and you need to force password auth:
-
-```bash
-ssh -p <SSH_PORT> -o PreferredAuthentications=password -o PubkeyAuthentication=no root@<VPS_IP>
-```
-
-2) Download the script from GitHub on the VPS:
-
-```bash
-apt-get update
-apt-get install -y curl ca-certificates
-curl -fsSL -o /root/deploy_snell_stls.sh https://raw.githubusercontent.com/vvizden/snell-stls-sh/main/deploy_snell_stls.sh
-chmod +x /root/deploy_snell_stls.sh
-```
-
-3) Run unattended install:
-
-```bash
-bash /root/deploy_snell_stls.sh install --non-interactive --yes
-```
-
-## Getting the Surge config
-
-After a successful deployment:
-
-- The script prints a Surge `[Proxy]` line directly in the terminal.
-- It also writes copy-paste friendly files on the server:
-  - `/root/snell-surge-proxy.conf`
-  - `/root/snell-stls-info.txt`
-
-Treat them as secrets: they contain Snell PSK / ShadowTLS password.
-
-## What the script does (short)
-
-- Installs `snell-server` and `shadow-tls` binaries and registers `systemd` services
-- `snell-server` listens only on loopback: `127.0.0.1:<snell-port>` (default `18080`)
-- `shadow-tls` listens on public entry: `0.0.0.0:<public-port>` (default `443/tcp`)
-- Key files created/modified:
-  - `/etc/snell/snell-server.conf`
-  - `/etc/systemd/system/snell-server.service`
-  - `/etc/systemd/system/shadow-tls.service`
-  - `/usr/local/bin/snell-server`
-  - `/usr/local/bin/shadow-tls`
-  - `/root/snell-surge-proxy.conf`
-  - `/root/snell-stls-info.txt`
-
-## Common commands
-
-```bash
-# interactive install
-bash /root/deploy_snell_stls.sh install
-
-# upgrade (tries to keep ports/keys/SNI)
-bash /root/deploy_snell_stls.sh upgrade --yes
-
-# status (services/ports/recent logs)
-bash /root/deploy_snell_stls.sh status
-
-# uninstall (keeps connection info files)
-bash /root/deploy_snell_stls.sh uninstall --yes
-
-# uninstall and delete connection info files
-bash /root/deploy_snell_stls.sh uninstall --purge --yes
-```
-
-## Flags (quick reference)
-
-| Flag | Meaning | Default | When to change |
-| --- | --- | --- | --- |
-| `--public-port <port>` | public entry port | `443` | 443 is taken or you prefer another port |
-| `--snell-port <port>` | Snell local port (loopback) | `18080` | conflict with existing services |
-| `--snell-psk <value>` | Snell PSK | auto-generated | unify config across machines or keep it fixed |
-| `--stls-password <value>` | ShadowTLS password | auto-generated | same as above |
-| `--stls-sni <domain>` | ShadowTLS SNI domain | auto-picked | auto-pick failed or you want to pin a domain |
-| `--ssh-port <port>` | SSH port kept open by firewall | auto-detect (fallback `22`) | auto-detect got it wrong |
-| `--no-firewall` | do not change firewall | off | you manage firewall yourself |
-| `--non-interactive` | no prompts | off | automation/batch runs |
-| `--yes` | skip confirmation | off | automation |
-
-For full help:
-
-```bash
-bash /root/deploy_snell_stls.sh --help
-```
-
-## Troubleshooting
-
-### 1) Snell download failed (possible anti-bot / captcha)
-
-The script parses Surge Snell release notes to locate Linux download links. If the VPS egress is blocked or the page format changes, it may fail and dump the raw page to:
-
-```bash
-sed -n '1,80p' /tmp/snell_release_notes_last.html
-```
-
-### 2) Service is not active
-
-Use:
-
-```bash
-bash /root/deploy_snell_stls.sh status
-```
-
-### 3) Your `--stls-sni` is rejected
-
-The script probes TLS 1.3 support via `openssl s_client -tls1_3`. If the domain does not complete a TLS 1.3 handshake from the server network, the script fails. Use a well-known TLS 1.3 domain or omit `--stls-sni` to let it auto-pick.
-
-## References
-
-- Surge KB (Snell release notes): <https://kb.nssurge.com/surge-knowledge-base/release-notes/snell>
-- ShadowTLS: <https://github.com/ihciah/shadow-tls>
+Snell does not provide forward secrecy. This tool does not change protocol security properties or guarantee availability/censorship resistance. Third-party binaries and this project are provided as-is.
