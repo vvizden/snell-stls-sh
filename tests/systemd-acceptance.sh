@@ -25,15 +25,15 @@ original_psk=$(sed -n 's/^psk = //p' "$BASE/current/snell-server.conf")
 [[ $(stat -c '%U:%G:%a' "$BASE/current/snell-server.conf") == root:snell:640 ]]
 [[ $(stat -c '%U:%a' "$BASE/current/surge.conf") == root:600 ]]
 expect_fail runuser -u nobody -- cat "$BASE/current/surge.conf"
-snellctl upgrade --channel beta --yes
+snellctl upgrade --channel rc --yes
 assert_running; assert_version 6.0.0rc2
-[[ $(jq -r .channel "$BASE/current/metadata.json") == beta ]]
+[[ $(jq -r .channel "$BASE/current/metadata.json") == rc ]]
 expect_fail snellctl upgrade --channel stable --yes
 assert_running; assert_version 6.0.0rc2
-# Exact version downgrade preserves beta channel and PSK.
+# Exact version downgrade preserves rc channel and PSK.
 snellctl upgrade --version 6.0.0b4 --allow-downgrade --yes
 assert_running; assert_version 6.0.0b4
-[[ $(jq -r .channel "$BASE/current/metadata.json") == beta ]]
+[[ $(jq -r .channel "$BASE/current/metadata.json") == rc ]]
 [[ $(sed -n 's/^psk = //p' "$BASE/current/snell-server.conf") == "$original_psk" ]]
 # No network function can be used by rollback.
 ( curl() { echo 'Unexpected network access during rollback' >&2; return 99; }; export -f curl; snellctl rollback --yes )

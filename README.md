@@ -50,11 +50,14 @@ sudo snellctl export
 | 查看运行状态 | `sudo snellctl status` |
 | 查看可用版本 | `snellctl versions` |
 | 升级到当前通道的最新版本 | `sudo snellctl upgrade` |
+| 更新 snellctl 工具本身 | `sudo snellctl self-update` |
 | 恢复上一套部署 | `sudo snellctl rollback` |
 | 导出当前 Surge 配置 | `sudo snellctl export` |
 | 查看最近日志 | `sudo journalctl -u snell-server.service -n 50` |
 
 升级保留连接密钥，会短暂中断连接。新版本启动检查失败时，工具会尝试恢复旧部署。升级后，请用 Surge 实际测试；需要恢复时执行 `rollback`，再导出并更新客户端配置。
+
+`self-update` 从本项目 `main` 分支更新 `/usr/local/sbin/snellctl`，不重启 Snell，也不修改配置或回滚数据。下载或校验失败时保留原工具；无人值守执行时添加 `--yes`。旧版工具若不支持此命令，按安装步骤重新下载脚本后执行 `sudo bash snell.sh self-update`。
 
 ## 选择版本
 
@@ -63,8 +66,8 @@ sudo snellctl export
 | 通道 | 候选范围 |
 | --- | --- |
 | `stable` | 正式版，推荐日常使用 |
-| `rc` | 正式版和 RC 候选版 |
-| `beta` | 正式版、RC 和 Beta 测试版 |
+| `rc` | 仅 RC 候选版 |
+| `beta` | 仅 Beta 测试版 |
 
 例如，切换到 RC 通道：
 
@@ -72,7 +75,7 @@ sudo snellctl export
 sudo snellctl upgrade --channel rc
 ```
 
-Beta 通道会继续跟进后续 RC 和正式版。使用测试版前，请确认 Surge 客户端支持对应版本。
+各通道只选择自身类型的最新版本，不会混用；通道内没有可用版本时会报错。使用测试版前，请确认 Surge 客户端支持对应版本。
 
 需要指定版本时，用 `--version` 替代 `--channel`；降级时加上 `--allow-downgrade`，例如：
 

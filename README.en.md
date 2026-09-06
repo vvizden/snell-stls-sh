@@ -50,11 +50,14 @@ Run these commands on your server:
 | Check service status | `sudo snellctl status` |
 | List available versions | `snellctl versions` |
 | Upgrade to the latest version in your channel | `sudo snellctl upgrade` |
+| Update snellctl itself | `sudo snellctl self-update` |
 | Restore the previous deployment | `sudo snellctl rollback` |
 | Export the current Surge configuration | `sudo snellctl export` |
 | Read recent logs | `sudo journalctl -u snell-server.service -n 50` |
 
 Upgrades preserve your connection key and briefly interrupt connections. If the new version fails startup checks, the tool attempts to restore the previous deployment. Test with Surge after upgrading. To recover, run `rollback`, then export the restored configuration and update your client.
+
+`self-update` updates `/usr/local/sbin/snellctl` from this project’s `main` branch without restarting Snell or changing configuration or rollback data. Download or validation failures preserve the existing tool; add `--yes` for unattended use. If your installed tool does not support this command, download the script again using the installation steps and run `sudo bash snell.sh self-update`.
 
 ## Choose a version
 
@@ -63,8 +66,8 @@ When you run an upgrade, the tool selects the latest version in your channel fro
 | Channel | Candidates |
 | --- | --- |
 | `stable` | Final releases, recommended for regular use |
-| `rc` | Final releases and release candidates |
-| `beta` | Final releases, release candidates and Beta releases |
+| `rc` | Release candidates only |
+| `beta` | Beta releases only |
 
 For example, switch to the RC channel:
 
@@ -72,7 +75,7 @@ For example, switch to the RC channel:
 sudo snellctl upgrade --channel rc
 ```
 
-The Beta channel follows later RC and final releases too. Before using a prerelease, check that your Surge client supports it.
+Each channel selects only the latest release of its own type. If none is available, selection fails without falling back to another channel. Before using a prerelease, check that your Surge client supports it.
 
 To select a specific version, use `--version` in place of `--channel`. Add `--allow-downgrade` when moving to an older version, for example:
 

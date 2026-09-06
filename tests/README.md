@@ -13,7 +13,7 @@ docker build -f tests/Dockerfile -t snellctl-test .
 docker run --rm snellctl-test bash -c 'shellcheck snell.sh && bash tests/run.sh'
 ```
 
-macOS 运行 6 组通用测试，Linux / root 容器运行全部 14 组，覆盖文件所有权、哈希、链接切换和锁。这些测试模拟 systemd 和网络响应；服务端与 Surge 的实际运行按下述步骤验证。
+macOS 运行 6 组通用测试，Linux / root 容器运行全部 15 组，覆盖文件所有权、哈希、链接切换、锁和管理工具自更新。这些测试模拟 systemd 和网络响应；服务端与 Surge 的实际运行按下述步骤验证。
 
 ## systemd 验收
 
@@ -29,7 +29,7 @@ docker rm -f snellctl-acceptance
 
 使用 `DISTRO=ubuntu:24.04` 重复测试，并分别在 amd64 和 aarch64 主机上验收。Docker 的 arm64 对应 Snell 的 aarch64。ARM Mac 上的 `--platform linux/amd64` 属于模拟执行，amd64 主机验收需单独完成。
 
-脚本固定验证 `5.0.1 → 6.0.0rc2 → 6.0.0b4`，Beta 通道更新后应同步调整预期。测试覆盖端口占用、安装、权限、通道切换、降级、密钥保留、离线回滚、启动失败恢复、SIGTERM 中断恢复、未完成事务恢复、服务重启及卸载清理。故障注入集中在测试脚本中。系统重启与断电恢复需在虚拟机中另行验收。
+脚本固定验证 `5.0.1 → 6.0.0rc2 → 6.0.0b4`，RC 通道更新后应同步调整预期。测试覆盖端口占用、安装、权限、通道切换、降级、密钥保留、离线回滚、启动失败恢复、SIGTERM 中断恢复、未完成事务恢复、服务重启及卸载清理。故障注入集中在测试脚本中。系统重启与断电恢复需在虚拟机中另行验收。
 
 ## Surge 验收
 

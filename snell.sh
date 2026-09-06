@@ -2,10 +2,12 @@
 # snellctl-managed-v1
 # Single-file installer and manager. Sourcing this file defines functions only.
 
-MANAGER_VERSION=1.0.0
+MANAGER_VERSION=1.1.0
 OWNER=snellctl-v1
 BASE=/opt/snellctl
 MANAGER=/usr/local/sbin/snellctl
+MANAGER_URL=https://raw.githubusercontent.com/vvizden/snellctl/main/snell.sh
+MANAGER_STAGE=''
 UNIT=/etc/systemd/system/snell-server.service
 SERVICE=snell-server.service
 LOCK_DIR=/run/snellctl
@@ -29,12 +31,13 @@ Usage: snellctl <command> [options]
   versions    Discover official versions and list retained local deployments
   install     Fresh installation (default channel: stable)
   upgrade     Follow the saved channel, or choose another channel/exact version
+  self-update Update snellctl itself from the project main branch
   rollback    Restore the previous complete deployment without network access
   status      Show running version, saved channel, listener and rollback target
   export      Print the current Surge proxy line (contains the PSK; root only)
   uninstall   Remove service and command; retain snapshots unless --purge
 
-  --channel stable|rc|beta    Maturity ceiling; install/upgrade only
+  --channel stable|rc|beta    Release channel; install/upgrade only
   --version VERSION          Exact official version; install/upgrade only
   --allow-downgrade          Explicit downgrade; upgrade --version only
   --server IP_OR_HOSTNAME    Public IPv4 address or DNS name; install only
@@ -45,8 +48,8 @@ Usage: snellctl <command> [options]
   --purge                   Delete retained snapshots; uninstall only
   -h, --help                Show this help
 
-stable allows final releases; rc allows final + RC; beta allows all three.
-The newest complete version wins. For example beta may select an RC or final.
+Each channel selects only its own release type: stable, RC, or Beta.
+The newest version within that channel wins; other channels are never substituted.
 No background updates, firewall changes, ShadowTLS or legacy-install migration.
 EOF
 }
@@ -55,7 +58,7 @@ parse_args() {
   COMMAND=${1:-help}; [[ $# -eq 0 ]] || shift
   case "$COMMAND" in
     help|-h|--help) usage; return 2 ;;
-    versions|install|upgrade|rollback|status|export|uninstall) ;;
+    versions|install|upgrade|self-update|rollback|status|export|uninstall) ;;
     *) die "Unknown command: $COMMAND" ;;
   esac
   while [[ $# -gt 0 ]]; do
@@ -115,7 +118,7 @@ binary_report_matches() {
   [[ $(version_channel "$1") != stable && "$2" == "${1%%[br]*}" ]]
 }
 channel_allows() {
-  case "$1:$(version_channel "$2")" in stable:stable|rc:stable|rc:rc|beta:*) return 0 ;; *) return 1 ;; esac
+  case "$1:$(version_channel "$2")" in stable:stable|rc:rc|beta:beta) return 0 ;; *) return 1 ;; esac
 }
 detect_arch() {
   case "$(uname -m)" in x86_64|amd64) ARCH=amd64 ;; aarch64|arm64) ARCH=aarch64 ;; *) die "Only amd64/aarch64 are supported" ;; esac
@@ -149,21 +152,21 @@ fetch_catalog() {
   return 1
 }
 select_release() {
-  local catalog=$1 ceiling=$2 arch=$3 v a url key best_key='' best='' result=''
-  # Select the globally newest candidate before checking architecture availability.
+  local catalog=$1 channel=$2 arch=$3 v a url key best_key='' best='' result=''
+  # Select the newest candidate in the channel before checking architecture availability.
   # Otherwise an absent ARM build could silently select an older release.
   while IFS=$'\t' read -r v a url; do
     [[ -n "$v" ]] || continue
-    channel_allows "$ceiling" "$v" || continue
+    channel_allows "$channel" "$v" || continue
     key=$(version_key "$v") || continue
     if [[ -z "$best_key" || "$key" > "$best_key" ]]; then best_key=$key; best=$v; fi
   done <<<"$catalog"
-  [[ -n "$best" ]] || { warn "No release found for channel $ceiling"; return 1; }
+  [[ -n "$best" ]] || { warn "No release found for channel $channel"; return 1; }
   supported_version "$best" || { warn "Latest release is $best; update the management tool for this major"; return 1; }
   while IFS=$'\t' read -r v a url; do
     if [[ "$v" == "$best" && "$a" == "$arch" ]]; then result=$url; break; fi
   done <<<"$catalog"
-  [[ -n "$result" ]] || { warn "Latest $ceiling release $best has no $arch download"; return 1; }
+  [[ -n "$result" ]] || { warn "Latest $channel release $best has no $arch download"; return 1; }
   printf '%s\t%s\n' "$best" "$result"
 }
 resolve_target() {
@@ -505,6 +508,31 @@ EOF
   systemctl daemon-reload
   systemctl enable "$SERVICE" >/dev/null
 }
+run_self_update() {
+  local version effective
+  secure_dir "${MANAGER%/*}" || die "Unsafe manager directory"
+  managed_file "$MANAGER" || die "No owned snellctl command at $MANAGER"
+  log "Update snellctl from $MANAGER_URL"
+  confirm
+  MANAGER_STAGE=$(mktemp "${MANAGER}.XXXXXXXX")
+  effective=$(curl -fLsS --proto '=https' --proto-redir '=https' --retry 2 --connect-timeout 10 --max-time 180 \
+    -o "$MANAGER_STAGE" -w '%{url_effective}' "$MANAGER_URL") || die "Manager download failed; existing command unchanged"
+  [[ "$effective" == "$MANAGER_URL" ]] || die "Unexpected manager download redirect"
+  [[ $(head -n 1 "$MANAGER_STAGE") == '#!/usr/bin/env bash' ]] || die "Invalid manager script header"
+  grep -Fxq '# snellctl-managed-v1' "$MANAGER_STAGE" || die "Invalid manager script marker"
+  version=$(sed -n 's/^MANAGER_VERSION=\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p' "$MANAGER_STAGE")
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Invalid manager version"
+  bash -n "$MANAGER_STAGE" || die "Manager syntax check failed; existing command unchanged"
+  if cmp -s "$MANAGER_STAGE" "$MANAGER"; then
+    rm -f -- "$MANAGER_STAGE"; MANAGER_STAGE=
+    log "snellctl $version is already up to date."
+    return 0
+  fi
+  chmod 0755 "$MANAGER_STAGE"
+  mv -fT "$MANAGER_STAGE" "$MANAGER"
+  MANAGER_STAGE=
+  log "Updated snellctl to $version. Snell service and deployment data unchanged."
+}
 health_check() {
   local id=$1 dir port pid executable listeners i stable_pid='' stable=0
   dir=$(generation_dir "$id") || return 1
@@ -584,6 +612,7 @@ cleanup_exit() {
   local status=$?
   trap - EXIT INT TERM
   set +e
+  [[ -z "$MANAGER_STAGE" ]] || rm -f -- "$MANAGER_STAGE"
   if (( LOCKED && OWNERSHIP_CHECKED )) && owned_base; then
     if [[ -e "$BASE/transaction.json" ]]; then recover_transaction || warn 'Recovery incomplete; rerun snellctl before any further changes'; status=1; fi
     if [[ -n "$WORK" && "$WORK" == "$BASE"/.stage-* && -d "$WORK" && ! -L "$WORK" ]]; then rm -rf -- "$WORK"; fi
@@ -627,7 +656,7 @@ run_deploy() {
   log 'Run sudo snellctl export to obtain the Surge configuration (contains the PSK).'
 }
 run_versions() {
-  local catalog v a url key ceiling selected dir
+  local catalog v a url key channel selected dir
   require_tools curl
   catalog=$(fetch_catalog) || die "Unable to query official versions"
   log 'Officially discoverable versions (not a complete historical archive):'
@@ -635,8 +664,8 @@ run_versions() {
     key=$(version_key "$v") || continue
     printf '%s\t%s\t%s\t%s\n' "$key" "$v" "$a" "$(version_channel "$v")"
   done <<<"$catalog" | LC_ALL=C sort -r | cut -f2-
-  for ceiling in stable rc beta; do
-    if selected=$(select_release "$catalog" "$ceiling" "$ARCH"); then log "$ceiling ($ARCH): ${selected%%$'\t'*}"; else log "$ceiling ($ARCH): unavailable / management-tool update required"; fi
+  for channel in stable rc beta; do
+    if selected=$(select_release "$catalog" "$channel" "$ARCH"); then log "$channel ($ARCH): ${selected%%$'\t'*}"; else log "$channel ($ARCH): unavailable / management-tool update required"; fi
   done
   if [[ -d "$BASE" ]]; then
     log 'Local snapshots: run sudo snellctl status for verified deployment details.'
@@ -721,7 +750,7 @@ main() {
   [[ "$parse_status" != 2 ]] || return 0
   detect_arch
   if [[ "$COMMAND" == versions ]]; then run_versions; return; fi
-  if [[ "$COMMAND" == install || "$COMMAND" == upgrade || "$COMMAND" == rollback || "$COMMAND" == uninstall ]]; then
+  if [[ "$COMMAND" == install || "$COMMAND" == upgrade || "$COMMAND" == self-update || "$COMMAND" == rollback || "$COMMAND" == uninstall ]]; then
     if (( YES == 0 )) && { (( NON_INTERACTIVE )) || [[ ! -t 0 ]]; }; then die 'Non-interactive changes require --yes'; fi
   fi
   if [[ "$COMMAND" == install && -z "$SERVER" ]] && { (( NON_INTERACTIVE )) || [[ ! -t 0 ]]; }; then die 'Non-interactive install requires --server'; fi
@@ -730,6 +759,8 @@ main() {
     # Check ownership before package installation or any project file changes.
     fresh_guard
     ensure_dependencies
+  elif [[ "$COMMAND" == self-update ]]; then
+    require_tools curl flock bash cmp
   else
     require_tools jq flock ss sha256sum
   fi
@@ -738,6 +769,7 @@ main() {
   trap cleanup_exit EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
+  if [[ "$COMMAND" == self-update ]]; then run_self_update; return; fi
   if owned_base; then
     check_owned_files
     recover_transaction || die "Unfinished transaction could not be recovered"

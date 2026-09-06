@@ -40,22 +40,37 @@ https://evil.example/snell-server-v99.0.0-linux-amd64.zip'
   eq "$(printf '%s\n' "$catalog" | wc -l | tr -d ' ')" 3
   eq "$(select_release "$catalog" stable amd64)" "5.0.1"$'\t'"$DOWNLOAD_BASE/snell-server-v5.0.1-linux-amd64.zip"
   eq "$(select_release "$catalog" rc amd64)" "6.0.0rc2"$'\t'"$DOWNLOAD_BASE/snell-server-v6.0.0rc2-linux-amd64.zip"
-  eq "$(select_release "$catalog" beta amd64)" "$(select_release "$catalog" rc amd64)"
+  no_cmd select_release "$catalog" beta amd64
   no_cmd select_release "$catalog" beta aarch64
   no_cmd parse_releases <<<'https://dl.nssurge.com/snell/snell-server-v6.0.0unexpected-linux-amd64.zip'
 }
 channel_selection() {
   local catalog
   catalog=$(record 5.0.1 aarch64; record 6.0.0rc2 amd64; record 6.0.0 amd64; record 6.1.0b1 amd64; record 6.0.0b4 amd64)
-  eq "$(select_release "$catalog" rc amd64 | cut -f1)" 6.0.0
+  eq "$(select_release "$catalog" rc amd64 | cut -f1)" 6.0.0rc2
   eq "$(select_release "$catalog" beta amd64 | cut -f1)" 6.1.0b1
   no_cmd select_release "$catalog" stable aarch64
   catalog=$(printf '%s\n' "$catalog"; record 7.0.0 amd64)
   no_cmd select_release "$catalog" stable amd64
-  yes_cmd channel_allows stable 5.0.1
-  no_cmd channel_allows stable 6.0.0rc2
-  no_cmd channel_allows rc 6.1.0b1
-  yes_cmd channel_allows beta 6.0.0
+  # Newer releases in other channels must never replace a matching prerelease.
+  catalog=$(record 6.0.0b2 aarch64; record 6.0.0b10 amd64; record 6.0.0rc2 aarch64; record 6.0.0rc10 amd64; record 6.0.0 amd64; record 6.1.0 amd64)
+  eq "$(select_release "$catalog" stable amd64 | cut -f1)" 6.1.0
+  eq "$(select_release "$catalog" rc amd64 | cut -f1)" 6.0.0rc10
+  eq "$(select_release "$catalog" beta amd64 | cut -f1)" 6.0.0b10
+  no_cmd select_release "$catalog" rc aarch64
+  no_cmd select_release "$catalog" beta aarch64
+  local channel other version
+  for channel in stable rc beta; do
+    case "$channel" in stable) version=6.0.0 ;; rc) version=6.0.0rc2 ;; beta) version=6.0.0b4 ;; esac
+    yes_cmd channel_allows "$channel" "$version"
+    catalog=$(record "$version" amd64)
+    for other in stable rc beta; do
+      [[ "$other" != "$channel" ]] || continue
+      no_cmd channel_allows "$other" "$version"
+      no_cmd select_release "$catalog" "$other" amd64
+    done
+    no_cmd select_release '' "$channel" amd64
+  done
 }
 fallback_discovery() {
   local calls="$TEST_ROOT/fetch-calls"
@@ -80,6 +95,10 @@ input_contract() {
   no_cmd parse_args status --purge
   no_cmd parse_args install --version 7.0.0
   no_cmd parse_args install --port
+  yes_cmd parse_args self-update --yes
+  no_cmd parse_args self-update --channel stable
+  no_cmd parse_args self-update --version 1.1.0
+  no_cmd parse_args self-update --purge
 }
 config_versions() {
   local v server_config snippet
@@ -117,6 +136,61 @@ setup_snapshots() {
   activate_pointer g-old
   systemctl() { printf '%s\n' "$*" >>"$SYSTEM_LOG"; return 0; }
   health_check() { [[ "$1" != "${FAIL_HEALTH:-none}" ]]; }
+}
+manager_update() {
+  setup_snapshots
+  LOCK_DIR="$TEST_ROOT/update-lock"
+  local original="$TEST_ROOT/original-manager" candidate="$TEST_ROOT/candidate-manager" fault=ok before
+  cp "$ROOT/snell.sh" "$original"
+  cp "$original" "$MANAGER"
+  sed 's/^MANAGER_VERSION=.*/MANAGER_VERSION=1.2.0/' "$original" >"$candidate"
+  # Downloaded code must only be parsed, never sourced or executed.
+  printf '\ntouch "%s"\n' "$TEST_ROOT/executed-candidate" >>"$candidate"
+  before=$(cat "$BASE/state.json")
+  printf 'unfinished transaction sentinel\n' >"$BASE/transaction.json"
+  require_linux_root() { :; }
+  curl() {
+    local output=''
+    while [[ $# -gt 0 ]]; do
+      if [[ "$1" == -o ]]; then output=$2; shift; fi
+      shift
+    done
+    case "$fault" in
+      network) printf partial >"$output"; return 28 ;;
+      html) printf '<html>error</html>\n' >"$output" ;;
+      syntax) cat "$candidate" >"$output"; printf '\nif\n' >>"$output" ;;
+      version) sed 's/^MANAGER_VERSION=.*/MANAGER_VERSION=invalid/' "$candidate" >"$output" ;;
+      *) cp "$candidate" "$output" ;;
+    esac
+    if [[ "$fault" == redirect ]]; then printf 'https://example.com/snell.sh'; else printf '%s' "$MANAGER_URL"; fi
+  }
+  for fault in network html syntax version redirect; do
+    no_cmd main self-update --yes
+    yes_cmd cmp -s "$original" "$MANAGER"
+    [[ -z $(find "$BASE" -name 'manager.*') ]] || fail 'manager staging file leaked'
+  done
+  fault=ok
+  no_cmd main self-update --non-interactive
+  yes_cmd cmp -s "$original" "$MANAGER"
+  ( main self-update --yes )
+  yes_cmd cmp -s "$candidate" "$MANAGER"
+  eq "$(stat -c %a "$MANAGER")" 755
+  eq "$(stat -c %u "$MANAGER")" 0
+  local inode
+  inode=$(stat -c %i "$MANAGER")
+  ( main self-update --yes )
+  eq "$(stat -c %i "$MANAGER")" "$inode"
+  eq "$(cat "$BASE/state.json")" "$before"
+  eq "$(readlink "$BASE/current")" generations/g-old
+  eq "$(cat "$BASE/transaction.json")" 'unfinished transaction sentinel'
+  [[ ! -e "$SYSTEM_LOG" && ! -e "$TEST_ROOT/executed-candidate" ]] || fail 'self-update executed code or touched systemd'
+  printf '# foreign command\n' >"$MANAGER"
+  no_cmd main self-update --yes
+  eq "$(cat "$MANAGER")" '# foreign command'
+  rm "$MANAGER"
+  ln -s "$original" "$MANAGER"
+  no_cmd main self-update --yes
+  [[ -L "$MANAGER" ]] || fail 'self-update replaced symlink'
 }
 snapshot_success() {
   setup_snapshots
@@ -236,11 +310,12 @@ recovery_failure() {
 bash -n "$ROOT/snell.sh"
 case_run 'full prerelease numeric ordering and malformed inputs' version_order
 case_run 'official parser and original RC truncation regression' catalog_parse
-case_run 'maturity ceilings, missing architecture and unknown major' channel_selection
+case_run 'strict channels, missing architecture and unknown major' channel_selection
 case_run 'Markdown-to-HTML fallback and network failure' fallback_discovery
 case_run 'CLI and endpoint validation' input_contract
 case_run 'v5 / early v6 beta / RC / final configuration generation' config_versions
 if [[ $(uname -s) == Linux && $EUID == 0 ]]; then
+  case_run 'manager self-update, failures, ownership and deployment isolation' manager_update
   case_run 'complete snapshot switch and offline rollback' snapshot_success
   case_run 'failed startup restores binary/config/export/state' snapshot_failure
   case_run 'interruption between state update and commit' interrupted_transaction
