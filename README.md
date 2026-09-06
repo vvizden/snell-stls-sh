@@ -87,19 +87,13 @@ sudo snellctl upgrade --version 5.0.1 --allow-downgrade
 
 ## 卸载
 
-移除服务和管理命令，保留配置与回滚数据：
+卸载服务和管理命令，并永久删除配置、密钥、回滚数据及服务账户：
 
 ```bash
 sudo snellctl uninstall
 ```
 
-彻底删除配置、密钥及回滚数据，使用安装时保存的脚本：
-
-```bash
-sudo bash snell.sh uninstall --purge
-```
-
-重新安装前，请先完成彻底卸载。
+执行前会要求确认。卸载后可重新安装，无需保留安装脚本。
 
 ## 开发与反馈
 

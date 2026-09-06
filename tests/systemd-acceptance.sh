@@ -71,10 +71,6 @@ assert_running
 systemctl restart "$SERVICE"
 assert_running
 snellctl uninstall --yes
-[[ -e "$BASE/current/surge.conf" && ! -e "$UNIT" && ! -e "$MANAGER" ]]
-[[ $(jq -r .installed "$BASE/state.json") == false ]]
-expect_fail bash "$ROOT/snell.sh" install --server 127.0.0.1 --yes
-bash "$ROOT/snell.sh" uninstall --purge --yes
-[[ ! -e "$BASE" ]]
+[[ ! -e "$BASE" && ! -e "$UNIT" && ! -e "$MANAGER" ]]
 ! getent passwd snell >/dev/null
 printf 'PASS: real systemd acceptance (%s / %s)\n' "$(. /etc/os-release; echo "$PRETTY_NAME")" "$(uname -m)"

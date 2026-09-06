@@ -29,7 +29,7 @@ docker rm -f snellctl-acceptance
 
 Repeat with `DISTRO=ubuntu:24.04` and on native amd64/aarch64 hosts. Docker's arm64 platform corresponds to Snell's aarch64 artifact. On an ARM Mac, `--platform linux/amd64` uses emulation and cannot substitute for native amd64 acceptance. The script deliberately pins the 5.0.1 → 6.0.0rc2 → 6.0.0b4 regression sequence; update its expectations when the live RC channel moves.
 
-The suite verifies occupied-port refusal, fresh install, permissions, channel selection, explicit downgrade, PSK preservation, offline rollback, real startup-failure recovery, SIGTERM cleanup, a simulated unfinished transaction, service restart, default uninstall, refusal to reinstall over retained data, and purge. Fault injection is confined to the test script. A daemon restart is tested; a full VM reboot and power-loss durability require separate VM acceptance.
+The suite verifies occupied-port refusal, fresh install, permissions, channel selection, explicit downgrade, PSK preservation, offline rollback, real startup-failure recovery, SIGTERM cleanup, a simulated unfinished transaction, service restart, complete removal with the default uninstall command. Fault injection is confined to the test script. A daemon restart is tested; a full VM reboot and power-loss durability require separate VM acceptance.
 
 ## Surge acceptance
 

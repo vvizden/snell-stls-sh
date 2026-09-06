@@ -14,7 +14,7 @@ LOCK_DIR=/run/snellctl
 NOTES=https://kb.nssurge.com/surge-knowledge-base/release-notes/snell
 DOWNLOAD_BASE=https://dl.nssurge.com/snell
 ARCH='' COMMAND='' CHANNEL='' EXACT='' SERVER='' PORT='' PSK=''
-YES=0 NON_INTERACTIVE=0 ALLOW_DOWNGRADE=0 PURGE=0 LOCKED=0 OWNERSHIP_CHECKED=0
+YES=0 NON_INTERACTIVE=0 ALLOW_DOWNGRADE=0 LOCKED=0 OWNERSHIP_CHECKED=0
 WORK='' TARGET='' TARGET_URL='' TARGET_CHANNEL='' NEW_GEN=''
 
 log() { printf '%s\n' "$*"; }
@@ -35,7 +35,7 @@ Usage: snellctl <command> [options]
   rollback    Restore the previous complete deployment without network access
   status      Show running version, saved channel, listener and rollback target
   export      Print the current Surge proxy line (contains the PSK; root only)
-  uninstall   Remove service and command; retain snapshots unless --purge
+  uninstall   Permanently remove service, command, configuration, keys and snapshots
 
   --channel stable|rc|beta    Release channel; install/upgrade only
   --version VERSION          Exact official version; install/upgrade only
@@ -45,7 +45,6 @@ Usage: snellctl <command> [options]
   --psk PSK                 Optional 16–255 ASCII letters/digits/_/-; install only
   --non-interactive         Never prompt; install requires --server
   --yes                     Accept the displayed operation
-  --purge                   Delete retained snapshots; uninstall only
   -h, --help                Show this help
 
 Each channel selects only its own release type: stable, RC, or Beta.
@@ -73,7 +72,6 @@ parse_args() {
       --yes) YES=1; shift ;;
       --non-interactive) NON_INTERACTIVE=1; shift ;;
       --allow-downgrade) ALLOW_DOWNGRADE=1; shift ;;
-      --purge) PURGE=1; shift ;;
       -h|--help) usage; return 2 ;;
       *) die "Unknown option: $1" ;;
     esac
@@ -86,7 +84,6 @@ parse_args() {
   if [[ -n "$SERVER$PORT$PSK" ]]; then
     [[ "$COMMAND" == install ]] || die "--server, --port and --psk are install-only"
   fi
-  (( PURGE == 0 )) || [[ "$COMMAND" == uninstall ]] || die "--purge requires uninstall"
   if (( ALLOW_DOWNGRADE )); then
     [[ "$COMMAND" == upgrade && -n "$EXACT" ]] || die "--allow-downgrade requires upgrade --version"
   fi
@@ -286,7 +283,7 @@ fresh_guard() {
   local p fragment
   if [[ -e "$BASE" || -L "$BASE" ]]; then
     check_owned_files
-    [[ ! -e "$BASE/state.json" ]] || [[ $(jq -r '.current // empty' "$BASE/state.json") == '' ]] || die "Deployment data already exists; use upgrade, or explicitly uninstall --purge before reinstalling"
+    [[ ! -e "$BASE/state.json" ]] || [[ $(jq -r '.current // empty' "$BASE/state.json") == '' ]] || die "Deployment data already exists; use upgrade, or uninstall before reinstalling"
   else
     for p in "$UNIT" "$UNIT.d" "$MANAGER" /etc/snell /usr/local/bin/snell-server /usr/local/sbin/snell-server /usr/bin/snell-server /opt/snell /usr/local/bin/shadow-tls /etc/systemd/system/shadow-tls.service; do
       [[ ! -e "$p" && ! -L "$p" ]] || die "Existing deployment/file detected: $p. Remove it manually; migration is not supported"
@@ -630,7 +627,7 @@ run_deploy() {
     check_owned_files
     recover_transaction || die "Cannot recover unfinished transaction"
     check_current
-    [[ $(jq -r .installed "$BASE/state.json") == true ]] || die "Service was uninstalled; purge retained data before a fresh install"
+    [[ $(jq -r .installed "$BASE/state.json") == true ]] || die "Service was uninstalled; run uninstall to remove retained data before a fresh install"
     load_settings
   fi
   resolve_target
@@ -710,35 +707,30 @@ run_rollback() {
 run_uninstall() {
   local dir id current_uid current_gid
   log 'Remove the managed systemd service and snellctl command.'
-  if (( PURGE )); then log 'Also permanently delete all managed snapshots, credentials and deployment state.'; else log "Keep complete snapshots and credentials at $BASE. Run this script with uninstall --purge to delete them later."; fi
+  log 'Permanently delete all managed snapshots, credentials and deployment state.'
   confirm
   remove_runtime || die "Unable to remove managed runtime"
-  if (( PURGE )); then
-    # Refuse recursive deletion if anything outside the owned layout appeared.
-    local p name
-    for p in "$BASE"/* "$BASE"/.[!.]* "$BASE"/..?*; do
-      [[ -e "$p" || -L "$p" ]] || continue
-      name=${p##*/}
-      case "$name" in .owner|account|state.json) regular_owned "$p" || die "Unsafe retained file: $p" ;;
-        current) [[ -L "$p" && $(readlink "$p") == "generations/$(current_id)" ]] || die "Unsafe current pointer" ;;
-        generations) secure_dir "$p" || die "Unsafe generations directory" ;;
-        *) die "Unexpected retained path: $p; inspect it manually before purge" ;;
-      esac
-    done
-    for dir in "$BASE"/generations/* "$BASE"/generations/.[!.]* "$BASE"/generations/..?*; do
-      [[ -e "$dir" || -L "$dir" ]] || continue
-      generation_dir "${dir##*/}" >/dev/null || die "Unowned generation path: $dir"
-    done
-    current_uid=$(id -u snell); current_gid=$(id -g snell)
-    [[ $(cat "$BASE/account") == "$current_uid:$current_gid" ]] || die "Account identity changed; remove manually"
-    userdel snell || die "Unable to remove service account"
-    if getent group snell >/dev/null; then groupdel snell || die "Unable to remove service group"; fi
-    rm -rf -- "$BASE"
-    log 'Managed deployment and credentials removed.'
-  else
-    jq '.installed = false' "$BASE/state.json" | atomic_json "$BASE/state.json"
-    log 'Service removed; snapshots retained.'
-  fi
+  # Refuse recursive deletion if anything outside the owned layout appeared.
+  local p name
+  for p in "$BASE"/* "$BASE"/.[!.]* "$BASE"/..?*; do
+    [[ -e "$p" || -L "$p" ]] || continue
+    name=${p##*/}
+    case "$name" in .owner|account|state.json) regular_owned "$p" || die "Unsafe retained file: $p" ;;
+      current) [[ -L "$p" && $(readlink "$p") == "generations/$(current_id)" ]] || die "Unsafe current pointer" ;;
+      generations) secure_dir "$p" || die "Unsafe generations directory" ;;
+      *) die "Unexpected retained path: $p; inspect it manually before uninstalling" ;;
+    esac
+  done
+  for dir in "$BASE"/generations/* "$BASE"/generations/.[!.]* "$BASE"/generations/..?*; do
+    [[ -e "$dir" || -L "$dir" ]] || continue
+    generation_dir "${dir##*/}" >/dev/null || die "Unowned generation path: $dir"
+  done
+  current_uid=$(id -u snell); current_gid=$(id -g snell)
+  [[ $(cat "$BASE/account") == "$current_uid:$current_gid" ]] || die "Account identity changed; remove manually"
+  userdel snell || die "Unable to remove service account"
+  if getent group snell >/dev/null; then groupdel snell || die "Unable to remove service group"; fi
+  rm -rf -- "$BASE"
+  log 'Managed deployment and credentials removed.'
 }
 
 main() {

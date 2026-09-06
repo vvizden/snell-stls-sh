@@ -92,6 +92,7 @@ input_contract() {
   no_cmd parse_args install --channel beta --version 6.0.0b4
   no_cmd parse_args upgrade --server example.com
   no_cmd parse_args upgrade --allow-downgrade
+  no_cmd parse_args uninstall --purge
   no_cmd parse_args status --purge
   no_cmd parse_args install --version 7.0.0
   no_cmd parse_args install --port
@@ -99,7 +100,25 @@ input_contract() {
   no_cmd parse_args self-update --channel stable
   no_cmd parse_args self-update --version 1.1.0
   no_cmd parse_args self-update --purge
+  uninstall_removes_data
 }
+uninstall_removes_data() (
+  BASE="$TEST_ROOT/uninstall"
+  confirm() { printf 'confirmed\n' >>"$TEST_ROOT/uninstall-actions"; }
+  remove_runtime() { printf 'runtime\n' >>"$TEST_ROOT/uninstall-actions"; }
+  regular_owned() { [[ -f "$1" ]]; }
+  id() { case "$1" in -u) echo 123 ;; -g) echo 456 ;; esac; }
+  userdel() { eq "$1" snell; printf 'user\n' >>"$TEST_ROOT/uninstall-actions"; }
+  getent() { return 0; }
+  groupdel() { eq "$1" snell; printf 'group\n' >>"$TEST_ROOT/uninstall-actions"; }
+  mkdir -p "$BASE"
+  printf '123:456\n' >"$BASE/account"
+  : >"$TEST_ROOT/uninstall-actions"
+  parse_args uninstall
+  run_uninstall
+  [[ ! -e "$BASE" ]] || fail 'uninstall retained deployment data'
+  eq "$(cat "$TEST_ROOT/uninstall-actions")" $'confirmed\nruntime\nuser\ngroup'
+) # Isolate account-command stubs from the rest of the suite.
 config_versions() {
   local v server_config snippet
   SERVER=example.com PORT=443 PSK=abcdefghijklmnopqrstuvwxyz0123456789

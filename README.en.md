@@ -29,7 +29,7 @@ Follow the prompts:
 | Port | The default is `443`; you can choose another available port |
 | Channel | Use the default `stable` channel for regular use |
 
-The script prepares the remaining dependencies and generates a connection key. After installation, allow the selected **TCP port** in your server firewall and cloud security group. Keep the downloaded `snell.sh` for removing installation data later.
+The script prepares the remaining dependencies and generates a connection key. After installation, allow the selected **TCP port** in your server firewall and cloud security group.
 
 ## Add to Surge
 
@@ -87,19 +87,13 @@ Installing a specific version saves its matching channel. Selecting a specific v
 
 ## Uninstall
 
-Remove the service and management command while keeping configuration and rollback data:
+Remove the service and management command, and permanently delete configuration, keys, rollback data and the service account:
 
 ```bash
 sudo snellctl uninstall
 ```
 
-To delete configuration, keys and rollback data completely, use the script saved during installation:
-
-```bash
-sudo bash snell.sh uninstall --purge
-```
-
-Complete the full removal before installing again.
+The command asks for confirmation before removal. You can reinstall afterward; the original installation script is not needed.
 
 ## Development and feedback
 
